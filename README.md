@@ -4,6 +4,6 @@
 
 - データはすべてブラウザ内で処理され、外部に送信されません
 - Excel(.xlsx)でのダウンロードに対応
-- デモ: https://sukima-kojo.github.io/kaigo-kinmu/
+- デモ: https://mikka-kojo.github.io/kaigo-kinmu/
 
 ご意見・「こうだったら使う」の声を歓迎します。
