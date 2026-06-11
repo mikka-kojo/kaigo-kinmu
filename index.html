@@ -57,13 +57,14 @@
 
     <h2 style="margin-top:20px">2. いつものシフト表を貼り付け</h2>
     <p class="hint">Excelのシフト表から「氏名の列+日々のマス」を範囲選択してコピーし、下の枠に貼り付けてください。<strong>並び替えや列の追加は不要</strong>です。</p>
+    <p class="hint" style="margin-bottom:2px">▼ 貼り付けるとこんな形になっていればOKです(見本・名前は架空)</p>
     <div class="tablewrap"><table class="example">
       <tr><th>氏名</th><th>1日</th><th>2日</th><th>3日</th><th>4日</th><th>…</th></tr>
       <tr><td>介護 花子</td><td>早</td><td>日</td><td>休</td><td>8</td><td>…</td></tr>
       <tr><td>山田 太郎</td><td>半</td><td>休</td><td>4</td><td></td><td>…</td></tr>
     </table></div>
-    <p class="hint">日々のマスは「8」のような時間でも、「早」「遅」「休」のような記号のままでもOK(休みは空欄でも可)。</p>
-    <label>記号→時間の変換ルール(事業所に合わせて編集可)
+    <p class="hint">日々のマスは「8」のような時間でも、「早」「遅」「休」のようないつもの記号のままでもOK(休みは空欄でも可)。</p>
+    <label>シフト記号を1日何時間と数えるか(例: 早番が8時間勤務なら「早=8」。事業所の決まりに合わせて書き換えてください)
       <input type="text" id="codeMap" value="早=8, 日=8, 遅=8, 夜=10, 半=4, 休=0, 公=0, 有=0" size="48">
     </label>
     <textarea id="shiftInput" placeholder="介護 花子&#9;早&#9;日&#9;休&#9;8 …(Excelからそのまま貼り付け)"></textarea>
