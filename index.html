@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>勤務形態一覧表メーカー — シフト表を貼るだけ</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root { --main: #2b6cb0; --bg: #f7fafc; --border: #cbd5e0; }
+  * { box-sizing: border-box; }
+  body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; margin: 0; background: var(--bg); color: #2d3748; }
+  header { background: var(--main); color: #fff; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: .9; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  section { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  h2 { font-size: 16px; margin: 0 0 12px; border-left: 4px solid var(--main); padding-left: 8px; }
+  label { display: inline-block; font-size: 13px; margin: 6px 16px 2px 0; }
+  input[type="text"], input[type="month"], input[type="number"], select {
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px;
+  }
+  textarea { width: 100%; height: 140px; font-family: monospace; font-size: 12px;
+    border: 1px solid var(--border); border-radius: 4px; padding: 8px; }
+  button { background: var(--main); color: #fff; border: none; border-radius: 6px;
+    padding: 10px 18px; font-size: 14px; cursor: pointer; margin-right: 8px; }
+  button:hover { opacity: .9; }
+  button.sub { background: #718096; }
+  .hint { font-size: 12px; color: #718096; margin: 6px 0; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+  th, td { border: 1px solid var(--border); padding: 3px 5px; text-align: center; }
+  th { background: #ebf8ff; }
+  td.name { text-align: left; min-width: 90px; }
+  tr.summary td { background: #fffaf0; font-weight: bold; }
+  .totals { margin-top: 12px; font-size: 14px; }
+  .totals strong { color: var(--main); }
+  footer { text-align: center; font-size: 12px; color: #718096; padding: 24px; }
+  @media print { header, #inputSec, footer, button { display: none; } section { border: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>勤務形態一覧表メーカー</h1>
+  <p>作成済みのシフト表を貼り付けるだけで、指定申請・運営指導で提出する「勤務形態一覧表」(参考様式ベース)と常勤換算を自動作成。データはブラウザ内で完結し、どこにも送信されません。</p>
+  <p style="margin:4px 0 0;font-size:12px;opacity:.8">※シフト作成ソフトではありません。お手元のシフト表を役所提出用の様式に変換するツールです。</p>
+</header>
+<main>
+  <section id="inputSec">
+    <h2>1. 事業所情報</h2>
+    <label>事業所名 <input type="text" id="officeName" placeholder="〇〇デイサービス" size="24"></label>
+    <label>サービス種別 <input type="text" id="serviceType" placeholder="通所介護" size="14"></label>
+    <label>対象月 <input type="month" id="targetMonth" value="2026-06"></label>
+    <label>常勤の週所定労働時間 <input type="number" id="fullTimeHours" value="40" min="32" max="40" step="0.5" style="width:70px"> 時間</label>
+
+    <h2 style="margin-top:20px">2. シフト表を貼り付け</h2>
+    <p class="hint">
+      Excelからコピーして貼り付け(タブ区切り)、またはCSV。<br>
+      1行=1人: <code>氏名, 職種, 資格, 勤務形態(A/B/C/D), 1日の時間, 2日の時間, …</code>(休みは空欄か0)<br>
+      勤務形態 … A: 常勤・専従 / B: 常勤・兼務 / C: 非常勤・専従 / D: 非常勤・兼務
+    </p>
+    <textarea id="shiftInput" placeholder="介護 花子&#9;介護職員&#9;介護福祉士&#9;A&#9;8&#9;8&#9;&#9;8&#9;8&#9;8 …"></textarea>
+    <div style="margin-top:10px">
+      <button onclick="generate()">一覧表を作成</button>
+      <button class="sub" onclick="loadSample()">サンプルデータを試す</button>
+    </div>
+  </section>
+
+  <section id="resultSec" style="display:none">
+    <h2>3. 勤務形態一覧表(プレビュー)</h2>
+    <div id="meta" class="hint"></div>
+    <div class="tablewrap"><table id="resultTable"></table></div>
+    <div class="totals" id="totals"></div>
+    <div style="margin-top:14px">
+      <button onclick="downloadXlsx()">Excelでダウンロード</button>
+      <button class="sub" onclick="window.print()">印刷</button>
+    </div>
+  </section>
+</main>
+<footer>勤務形態一覧表メーカー(プロトタイプ)— ご意見・「使いたい」の声をお待ちしています</footer>
+
+<script>
+const KUBUN = { A: "常勤・専従", B: "常勤・兼務", C: "非常勤・専従", D: "非常勤・兼務" };
+let lastResult = null;
+
+function daysInMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+function parseShift(text) {
+  return text.trim().split(/\r?\n/).filter(l => l.trim()).map(line => {
+    const cells = line.includes("\t") ? line.split("\t") : line.split(",");
+    const [name, role, license, kubun, ...hours] = cells.map(c => c.trim());
+    return {
+      name, role: role || "", license: license || "",
+      kubun: (kubun || "").toUpperCase(),
+      hours: hours.map(h => parseFloat(h) || 0)
+    };
+  });
+}
+
+function generate() {
+  const ym = document.getElementById("targetMonth").value;
+  const nDays = daysInMonth(ym);
+  const weekHours = parseFloat(document.getElementById("fullTimeHours").value) || 40;
+  const staff = parseShift(document.getElementById("shiftInput").value);
+  if (!staff.length) { alert("シフト表を貼り付けてください"); return; }
+
+  // 週平均 = 月合計 ÷ (暦日数/7) / 常勤換算 = 週平均 ÷ 週所定労働時間(上限1.0)
+  const weeks = nDays / 7;
+  staff.forEach(s => {
+    s.hours = s.hours.slice(0, nDays);
+    while (s.hours.length < nDays) s.hours.push(0);
+    s.total = s.hours.reduce((a, b) => a + b, 0);
+    s.weekAvg = s.total / weeks;
+    s.fte = Math.min(s.weekAvg / weekHours, 1.0);
+  });
+
+  const table = document.getElementById("resultTable");
+  let html = "<tr><th>氏名</th><th>職種</th><th>資格</th><th>勤務形態</th>";
+  for (let d = 1; d <= nDays; d++) html += `<th>${d}</th>`;
+  html += "<th>合計</th><th>週平均</th><th>常勤換算</th></tr>";
+  staff.forEach(s => {
+    html += `<tr><td class="name">${s.name}</td><td>${s.role}</td><td>${s.license}</td><td>${KUBUN[s.kubun] || s.kubun}</td>`;
+    s.hours.forEach(h => html += `<td>${h ? h : ""}</td>`);
+    html += `<td>${s.total.toFixed(1)}</td><td>${s.weekAvg.toFixed(1)}</td><td>${s.fte.toFixed(2)}</td></tr>`;
+  });
+
+  // 職種ごとの常勤換算合計
+  const byRole = {};
+  staff.forEach(s => { byRole[s.role] = (byRole[s.role] || 0) + s.fte; });
+  const totalFte = staff.reduce((a, s) => a + s.fte, 0);
+  html += `<tr class="summary"><td class="name">合計</td><td colspan="3"></td><td colspan="${nDays}"></td>`
+        + `<td>${staff.reduce((a,s)=>a+s.total,0).toFixed(1)}</td><td></td><td>${totalFte.toFixed(2)}</td></tr>`;
+  table.innerHTML = html;
+
+  document.getElementById("meta").textContent =
+    `${document.getElementById("officeName").value || "(事業所名未入力)"} / ` +
+    `${document.getElementById("serviceType").value || "(サービス種別未入力)"} / ${ym}(${nDays}日) / ` +
+    `常勤の週所定労働時間 ${weekHours}h`;
+  document.getElementById("totals").innerHTML =
+    "職種別の常勤換算: " +
+    Object.entries(byRole).map(([r, v]) => `${r || "(職種未入力)"} <strong>${v.toFixed(2)}</strong>`).join(" / ");
+
+  lastResult = { ym, nDays, weekHours, staff, byRole };
+  document.getElementById("resultSec").style.display = "";
+  document.getElementById("resultSec").scrollIntoView({ behavior: "smooth" });
+}
+
+function downloadXlsx() {
+  if (!lastResult) return;
+  const { ym, nDays, staff } = lastResult;
+  const header1 = ["従業者の勤務の体制及び勤務形態一覧表(参考様式ベース)"];
+  const header2 = [`事業所名: ${document.getElementById("officeName").value}`,
+                   `サービス種別: ${document.getElementById("serviceType").value}`, `対象月: ${ym}`];
+  const cols = ["氏名", "職種", "資格", "勤務形態", ...Array.from({length: nDays}, (_, i) => `${i+1}日`),
+                "合計", "週平均", "常勤換算"];
+  const rows = staff.map(s => [s.name, s.role, s.license, KUBUN[s.kubun] || s.kubun,
+    ...s.hours.map(h => h || ""), s.total, +s.weekAvg.toFixed(2), +s.fte.toFixed(2)]);
+  const ws = XLSX.utils.aoa_to_sheet([header1, header2, [], cols, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, ym);
+  XLSX.writeFile(wb, `勤務形態一覧表_${ym}.xlsx`);
+}
+
+function loadSample() {
+  const ym = document.getElementById("targetMonth").value;
+  const nDays = daysInMonth(ym);
+  const people = [
+    ["介護 花子", "介護職員", "介護福祉士", "A", [8,8,0,8,8,8,0]],
+    ["山田 太郎", "介護職員", "実務者研修", "C", [4,0,4,0,4,0,0]],
+    ["佐藤 道子", "生活相談員", "社会福祉士", "B", [8,8,8,0,0,8,8]],
+    ["鈴木 一郎", "看護職員", "看護師", "D", [0,6,0,6,0,6,0]],
+    ["高橋 恵", "機能訓練指導員", "理学療法士", "C", [0,0,5,0,5,0,0]]
+  ];
+  document.getElementById("officeName").value = "サンプルデイサービス";
+  document.getElementById("serviceType").value = "通所介護";
+  const lines = people.map(([n, r, l, k, pat]) => {
+    const hours = Array.from({length: nDays}, (_, i) => pat[i % 7] || "");
+    return [n, r, l, k, ...hours].join("\t");
+  });
+  document.getElementById("shiftInput").value = lines.join("\n");
+  generate();
+}
+</script>
+</body>
+</html>
